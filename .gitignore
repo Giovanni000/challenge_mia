@@ -1,0 +1,8 @@
+# Dati
+data/
+*.csv
+*.npy
+*.npz
+*.pkl
+*.h5
+
