@@ -8,34 +8,36 @@
 ## Collegamenti con il notebook di lezione
 - **Notebook di riferimento:** `old_notebooks/Timeseries Classification (1).ipynb`, orientato a Google Colab e dataset dimostrativi.
 - **Principali differenze introdotte:**
-  - Rimosse le istruzioni per il montaggio di Google Drive e comandi `%cd`, sostituite con path locali (`/Users/md101ta/Desktop/Pirates`).
-  - Gestione esplicita del `seed`, della configurazione CUDA e della directory `outputs/` per salvare checkpoint e submission.
-  - Uso di `pandas` per pivotare i dati da formato long (per time step) a tensori `(N, T, F)` compatibili con PyTorch.
-  - Conversione delle pipeline di esempio basate su TensorFlow in un'implementazione PyTorch `RecurrentBackbone` parametrica (RNN/GRU/LSTM).
-  - Integrazione di funzioni helper (normalizzazione, dataset/dataloader, training loop, scheduler, salvataggio miglior modello).
+  - Gestione automatica di path locali/Colab, mount di Google Drive e directory dedicate `outputs/`, `logs/`, `checkpoints/`.
+  - Pipeline dati adattata al formato long del Pirate Pain (pivot → tensori `(N, T, F)`), encoding delle feature categoriche e normalizzazione globale.
+  - Implementazione PyTorch modulare (`RecurrentBackbone`) con supporto a RNN/GRU/LSTM, versioni bidirezionali e hyperparam personalizzabili.
+  - Training loop avanzato (`fit_model`) con mixed precision, gradient clipping, ReduceLROnPlateau monitorato su macro-F1, early stopping configurabile, checkpointing e logging TensorBoard.
+  - Sistema di esperimenti (`prepare_config`, `run_experiment`) per lanciare più configurazioni in sequenza, salvare i risultati e confrontarli tramite `summary_table`.
 
 ## Adattamento al dataset Pirate Pain
 - **Pre-processing:**
-  - Pivot per ottenere sequenze ordinate per `sample_index` e `time`.
-  - Normalizzazione feature-wise con media e deviazione standard calcolate sull'intero training set.
-  - Mappatura etichette stringa → indici (`LABEL2IDX` e `IDX2LABEL`).
+  - Pivot per ottenere sequenze ordinate per `sample_index` e `time` (180 step × 37 feature).
+  - Normalizzazione feature-wise usando media/deviazione dello split di training.
+  - Codifica di `n_legs`, `n_hands`, `n_eyes` in valori interi condivisi con il test set.
+  - Mapping etichette stringa → indici (`LABEL2IDX`, `IDX2LABEL`).
 - **Validazione:**
-  - Split stratificato `train/valid` (80/20) mantenendo la distribuzione di classi sbilanciata.
-  - Supporto a `StratifiedKFold` suggerito per esperimenti futuri.
-- **Modellazione:**
-  - Classe `RecurrentBackbone` configurabile (`rnn`, `gru`, `lstm`, bidirezionale, numero layer, dropout).
-  - Training loop con `AdamW`, gradient clipping, scheduler `ReduceLROnPlateau` monitorando `macro F1`.
-  - Log dei risultati, salvataggio `best_state` e valutazione (report sklearn + matrice di confusione).
-- **Inferenza:**
-  - DataLoader dedicato al test set normalizzato, generazione di `submission_lstm.csv` in `outputs/`.
+  - Split stratificato `train/valid` (default 80/20 con `train_test_split` e seed fissato).
+  - Struttura pronta per estendere a `StratifiedKFold`/`GroupKFold` (basta iterare sugli split e richiamare `run_experiment`).
+- **Modellazione & training:**
+  - Classe `RecurrentBackbone` parametrica (tipologia cella, hidden size, layer, dropout, bidirezionalità) richiamata dal loop di training.
+  - `fit_model` produce history completo (loss, accuracy, precision, recall, F1) + checkpoint del best model; supporto a TensorBoard (`logs/<run_name>`).
+  - Registro esperimenti con `EXPERIMENT_CONFIGS` e tabella riassuntiva (`summary_table`) per confrontare diverse architetture.
+- **Inferenza e submission:**
+  - Ricarica automatica del best checkpoint, inferenza sul test set e salvataggio di `submission_<run_name>.csv` in `outputs/`.
 
 ## Come usare il notebook
-1. Eseguire il notebook `challenge1_solution.ipynb` in locale (o su macchina con GPU, adattando i path).
-2. Verificare le celle di training per un modello di base (`train_model(rnn_type='lstm', ...)`).
-3. Valutare la macro-F1 in validazione e salvare la submission.
-4. Esplorare varianti GRU/RNN e cross-validation per migliorare il punteggio.
+1. Impostare (se serve) `EXPERIMENT_CONFIGS` con le configurazioni da provare (es. LSTM baseline, GRU bidirezionale, variazioni di dropout/hidden).
+2. Eseguire la cella di training multiplo: ogni esperimento salva checkpoint, log TensorBoard e risultati in `experiment_results`.
+3. Selezionare automaticamente il best run (macro-F1 più alta) e visualizzare curve di apprendimento + matrice di confusione.
+4. Generare il file di submission (`submission_<run_name>.csv`) e conservare i checkpoint corrispondenti per il report.
+5. Opzionale: ampliare con cross-validation, ricerca hyperparam e/o ensemble sfruttando la stessa infrastruttura.
 
 ## Punti chiave per il report finale
-- Documentare esperimenti (ipotesi, metriche, checkpoint salvati).
-- Inserire nel notebook output e grafici generati (`plot_history`, matrice di confusione).
-- Conservare la corrispondenza tra configurazioni provate e file `.pt` esportati.
+- Documentare configurazioni provate (parametri principali, metriche, path checkpoint) usando `summary_table` come riferimento.
+- Inserire nel notebook output chiave: log TensorBoard, grafici da `plot_history`, confusion matrix e metriche sklearn.
+- Allegare i notebook eseguiti, i file di submission e i checkpoint migliori coerenti con quanto descritto nel report.
