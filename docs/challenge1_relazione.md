@@ -13,6 +13,7 @@
   - Implementazione PyTorch modulare (`RecurrentBackbone`) con supporto a RNN/GRU/LSTM, versioni bidirezionali/monodirezionali e hyperparam personalizzabili.
   - Training loop avanzato (`fit_model`) con mixed precision, gradient clipping, ReduceLROnPlateau monitorato su macro-F1, early stopping configurabile, checkpointing e logging TensorBoard.
   - Sistema di esperimenti (`EXPERIMENT_CONFIGS`) per lanciare sequenzialmente 6 configurazioni (LSTM/GRU/RNN × mono/bidirezionali) e confronto automatico (`summary_table`).
+  - Hyperparameter sweep configurabile per GRU (`SWEEP_PARAM_SPACE`, `MAX_SWEEP_RUNS`) per esplorare combinazioni di hidden size, layer, dropout, LR e bidirezionalità.
   - Funzioni dedicate alla cross-validation (`run_cross_validation`, `summarize_cv_results`) per replicare l’approccio di lezione con split multipli e report aggregati (media/std delle metriche).
 
 ## Adattamento al dataset Pirate Pain
@@ -35,10 +36,11 @@
 ## Come usare il notebook
 1. Impostare (se serve) `EXPERIMENT_CONFIGS` con le configurazioni da provare (LSTM/GRU/RNN mono/bidirezionali o nuove varianti).
 2. Eseguire la cella di training multiplo: ogni esperimento salva checkpoint, log TensorBoard e risultati in `experiment_results`.
-3. Lanciare la cross-validation (`run_cross_validation`) sulla configurazione preferita per ottenere metriche medie e stabilità.
-4. Consultare `summary_table`, `cv_summary` e il log TensorBoard combinato (`%tensorboard --logdir outputs/logs`) per analisi qualitative/quantitative.
-5. Generare il file di submission (`submission_<run_name>.csv`) e conservare i checkpoint corrispondenti per il report.
-6. Opzionale: estendere con hyperparameter search (iterando sulle configurazioni) o ensemble di checkpoint.
+3. Avviare (se desiderato) lo sweep GRU (`SWEEP_PARAM_SPACE`, `MAX_SWEEP_RUNS`) per testare automaticamente combinazioni di hyperparam.
+4. Lanciare la cross-validation (`run_cross_validation` o `ENABLE_AUTO_CV=True`) sulla configurazione preferita per ottenere metriche medie e stabilità.
+5. Consultare `summary_table`, `cv_summary` e il log TensorBoard combinato (`%tensorboard --logdir outputs/logs`) per analisi qualitative/quantitative.
+6. Generare il file di submission (`submission_<run_name>.csv`) e conservare i checkpoint corrispondenti per il report.
+7. Opzionale: estendere con hyperparameter search più ampia o ensemble di checkpoint.
 
 ## Punti chiave per il report finale
 - Documentare configurazioni provate (parametri principali, metriche per split, path checkpoint) usando `summary_table` e `cv_summary` come riferimento.
