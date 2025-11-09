@@ -1,138 +1,124 @@
-# Cosa fa ogni blocco del notebook (spiegato facilissimo)
+# Diario Esecuzione Notebook (stile laboratorio)
 
-Immagina che il notebook sia un grande ricettario: ogni blocco è un ingrediente o un passaggio per preparare il "modello pirata". Ecco cosa succede, passo dopo passo.
-
----
-
-## 1. Prepariamo la cucina
-- **Import**: prendiamo gli attrezzi (librerie Python) che useremo dopo.
-- **Impostiamo il seme**: `set_seed(42)` per far sì che ogni volta il risultato sia uguale (niente sorprese!).
-- **Capire dove siamo**: stampiamo se siamo su Google Colab o sul computer locale e fissiamo le cartelle (`data`, `outputs`).
-- **Helper AMP**: `autocast_context()` e `create_grad_scaler()` ci permettono di usare la GPU con gli steroidi (mixed precision) senza errori.
-
-_Cosa ci aspettiamo_: avere tutto il necessario pronto, senza doverci ricordare mille comandi a mano.
+Questa guida segue l’ordine di esecuzione del notebook `challenge1_solution.ipynb`, esattamente come faresti in lab. Ogni sezione indica cosa lanciare, cosa succede e quali risultati controllare.
 
 ---
 
-## 2. Leggiamo i dati e li mettiamo in ordine
-- Carichiamo i CSV (`pirate_pain_train.csv`, `pirate_pain_train_labels.csv`, `pirate_pain_test.csv`).
-- Convertiamo le parole (`one`, `two`) in numeri per `n_legs`, `n_hands`, `n_eyes`.
-- Guardiamo quante volte compare ogni etichetta (bar chart).
-- Facciamo un "pivot" per trasformare le tabelle in un formato adatto alla rete neurale: da righe sparse a blocchi `(campioni, 180, 37)`.
-- Normalizziamo: tutte le caratteristiche hanno media ~0 e varianza ~1.
+## 1. Preprocessing
+**Cosa lanciare**: celle iniziali (import, seed, caricamento CSV, pivot, normalizzazione).
 
-_Cosa ci aspettiamo_: dati puliti e pronti, così il modello non si confonde con formati strani.
+**Cosa succede**
+- Importiamo librerie, fissiamo il seed, impostiamo le cartelle (`data`, `outputs`, `logs`).
+- Leggiamo `pirate_pain_train.csv` + `pirate_pain_train_labels.csv` e il test.
+- Convertiamo le colonne categoriche (`n_legs`, `n_hands`, `n_eyes`) in numeri (0, 1, 2…).
+- Pivotiamo il dataset: ogni `sample_index` diventa una matrice `(180 time step × 37 feature)`.
+- Normalizziamo le feature (media ≈ 0, varianza ≈ 1) e salviamo `mean/std` per l’inferenza.
 
----
-
-## 3. Dataset e DataLoader
-- `TimeSeriesDataset` converte gli array in oggetti PyTorch.
-- `make_dataloader_from_arrays` crea carrelli (batch) con shuffle deterministico.
-- `create_dataloaders` divide in train/valid (80/20 di default), restituisce anche gli indici e usa un seed fisso.
-
-_Cosa ci aspettiamo_: ogni volta che alleniamo, gli stessi campioni finiscono nello stesso split; i carrelli sono efficienti e si riempiono senza intoppi.
+**Risultato atteso**
+- Vedi le shape (`(N_train, 180, 37)`), i mapping delle etichette e un grafico della distribuzione classi.
+- Da qui in poi i dati sono pronti per qualsiasi modello ricorrente.
 
 ---
 
-## 4. Configurazione base
-- `prepare_config` imposta i parametri standard (GRU mono, hidden 256, 2 layer, dropout 0.3, lr 2e-3… con opzioni per warmup, EMA, scheduler).
+## 2. Allenamento RNN classiche
+**Cosa lanciare**: blocco `EXPERIMENT_CONFIGS` mantenendo le entry RNN (`RNN_BI`, `RNN_SINGLE`) o eseguendo una cella dedicata se hai lasciato il set compatto.
 
-_Cosa ci aspettiamo_: cambiare esperimenti sovrascrivendo solo quello che serve (`hidden_size`, `dropout`, ecc.).
+**Cosa succede**
+- Per ogni configurazione RNN (mono + bidirezionale):
+  - Creiamo dataloader (split 90/10 stratificato).
+  - Alleniamo per 60 epoche max (early stopping a EMA F1, warmup + scheduler).
+  - Log su TensorBoard (`outputs/logs/RNN_*`).
 
----
+**Cosa controllare**
+- `summary_table`: due righe dedicate alle RNN con macro F1/accuracy.
+- Cella `plot_history(best_history, ...)` se la RNN è la migliore: grafico loss/F1.
+- Cella confusion matrix + classification report (stampa ricordata dal miglior modello corrente).
 
-## 5. Perdita intelligente
-- `FocalLoss` e `build_criterion` ci permettono di usare pesi di classe, focal loss, label smoothing.
-- Lo decidiamo dalla configurazione (`use_class_weights`, `use_focal_loss`).
-
-_Cosa ci aspettiamo_: se una classe (es. `high_pain`) è rara, il modello riceve più attenzione.
-
----
-
-## 6. Il cuore del modello
-- `RecurrentBackbone` è il cervello: GRU/LSTM/RNN con il numero di layer, hidden e dropout che scegliamo.
-
-_Cosa ci aspettiamo_: gestisce qualsiasi variante senza cambiare altro codice.
+**Aspettativa**
+- RNN mono di solito sotto GRU ma utile come baseline. Se la RNN ha macro F1 bassa, prosegui comunque (è il comportamento “lab”).
 
 ---
 
-## 7. Funzioni di allenamento
-- `compute_classification_metrics` calcola accuracy, precision, recall, macro F1.
-- `train_one_epoch` e `evaluate_epoch` gestiscono avanti/indietro sulla GPU con AMP, grad-clip e restituiscono metriche.
+## 3. Allenamento GRU (mono e bi)
+**Cosa lanciare**: nella stessa cella `EXPERIMENT_CONFIGS` (dopo aver commentato eventuali modelli che non vuoi) oppure con configurazioni dedicate (es. `prepare_config('GRU_SINGLE', {...})`, `prepare_config('GRU_BI', {...})`).
 
-_Cosa ci aspettiamo_: una cornice stabile per ogni epoch, con i numeri pronti per il log.
+**Cosa succede**
+- Set di run: GRU monodirezionale + bidirezionale.
+- Stessa pipeline (loss pesata se `use_class_weights=True`, EMA, scheduler).
+- Log separati: `outputs/logs/GRU_SINGLE`, `outputs/logs/GRU_BI`.
 
----
+**Cosa controllare**
+- `summary_table`: le righe GRU in cima (solitamente macro F1 più alta).
+- Grafico `plot_history` riflette l’andamento GRU (loss/accuracy/F1/EMA).
+- Confusion matrix: utile per vedere come trattano `high_pain` vs `low_pain`.
+- Se vuoi approfondire: lancia `run_cross_validation` su GRU per il report finale.
 
-## 8. Trainer super completo (`fit_model`)
-- Applica warmup del learning rate, ReduceLROnPlateau, EMA sulla macro F1, early stopping sulla EMA, gradient clipping.
-- Logga su TensorBoard (loss, F1, confusion matrix).
-- Salva il best checkpoint (state_dict CPU-safe) con config, metriche e storia.
-
-_Cosa ci aspettiamo_: il training si ferma da solo quando smette di migliorare, e conserva tutte le info per riprodurre i risultati.
-
----
-
-## 9. Un esperimento completo (`run_experiment`)
-- `set_seed` per riproducibilità.
-- Crea dataloader con seed, calcola `class_counts` e la loss (pesata se serve).
-- Chiama `fit_model` e salva nel risultato: modello, split, scaler, label mapping, history.
-
-_Cosa ci aspettiamo_: ogni run è un “pacchetto completo” già pronto per inferenza o report.
+**Aspettativa**
+- GRU monodirezionale è spesso il best model. Prendi nota di F1, accuracy, epoca migliore.
 
 ---
 
-## 10. Cross-Validation (`run_cross_validation`)
-- StratifiedKFold su `n_splits` (di default 5), seed diverso per ogni fold.
-- Per ogni fold allena, salva tutto come in `run_experiment` e indica il numero del fold.
+## 4. Allenamento LSTM
+**Cosa lanciare**: Rimuovi/commenta gli altri run e lascia le configurazioni LSTM (`LSTM_BI`, `LSTM_SINGLE`).
 
-_Cosa ci aspettiamo_: media e varianza delle metriche, per capire se il modello è stabile tra split diversi.
+**Cosa succede**
+- Alleni LSTM monodirezionale e bidirezionale con la stessa pipeline.
+- Anche qui log separati (`outputs/logs/LSTM_*`).
 
----
+**Cosa controllare**
+- `summary_table`: confronto immediato con GRU e RNN.
+- Grafico `plot_history` (loss/F1, eventuale overfitting).
+- Confusion matrix: spesso LSTM fatica rispetto a GRU, ma serve al confronto.
 
-## 11. Tabelle riassuntive
-- `build_summary_table` raccoglie i risultati da `experiment_results`, `sweep_results`, `cv_results`, `auto_cv_results` e li ordina per macro F1.
-
-_Cosa ci aspettiamo_: una vista unica per decidere qual è il modello migliore e da rieseguire.
-
----
-
-## 12. Training multipli
-- `EXPERIMENT_CONFIGS`: lancia le configurazioni principali (puoi tenerne solo una o molte).
-- `run_cross_validation`: cv manuale.
-- `SWEEP_PARAM_SPACE`: prova combinazioni a caso di hyperparam su GRU.
-- `ENABLE_AUTO_CV`: se lo metti a `True`, avvia automaticamente CV sui run migliori della tabella.
-
-_Cosa ci aspettiamo_: zero click manuali per ripetere i test; basta eseguire la cella e aspettare.
+**Aspettativa**
+- LSTM bidirezionale potrebbe avvicinarsi alla GRU base; il monodirezionale chiarisce quanto conti la direzione.
 
 ---
 
-## 13. Report finale
-- `summary_table`: stampa run, tipo modello, se è bidirezionale, F1 e path del log.
-- `build_summary_table` + `best_run`: carica il modello migliore, disegna le curve (`plot_history`), stampa report sklearn, confusion matrix e salva la submission (CSV) con il nome del run.
+## 5. Grafici e report finali
+**Cosa lanciare**
+- Cella `summary_table` per ordinare i run (macro F1 decrescente).
+- Cella `best_run` → stampa del modello migliore + figure.
+- `plot_history(best_history, ...)` per il grafico completo.
+- `classification_report` + `confusion_matrix` del best run.
+- Cella `submission` (salva `submission_<run_name>.csv`).
 
-_Cosa ci aspettiamo_: un unico post-it con risultati, grafici e la submission già pronta da caricare su Kaggle.
+**Cosa controllare**
+- Macro F1 del best run (di solito GRU_SINGLE).
+- F1 per classe, in particolare `high_pain` (per capire se serve class weighting o focal loss).
 
 ---
 
-## 14. Next steps (idee extra)
-- Prova Jolly: label smoothing, focal loss, class weights, hidden size più grandi, dropout diversi, ensemble, attention.
+## 6. TensorBoard (visione globale)
+**Cosa lanciare**
+- In Colab: `%tensorboard --logdir "/content/drive/MyDrive/Pirates/outputs/logs"`
+- In locale: `tensorboard --logdir /Users/.../Pirates/outputs/logs`
 
-_Cosa ci aspettiamo_: sappiamo dove mettere le mani per migliorare ancora, senza riscrivere tutto.
+**Cosa vedrai**
+- Grafici sovrapposti di loss, macro F1, accuracy per tutti i run (RNN, GRU, LSTM).
+- Sezione scalars: `F1_class/<nome>` per ogni classe.
+- Plugin "Graphs" non è usato, ma "Scalars" e "Images" mostrano confusion matrix (quando loggata).
+
+**Aspettativa**
+- Puoi confrontare l’EMA dei vari modelli, individuare se uno continua a migliorare oltre l’early stopping, o se vale la pena cambiare dropout, hidden size, ecc.
 
 ---
 
-## In breve
-| Blocco | Cosa fa | Cosa otteniamo |
-| --- | --- | --- |
-| Setup | Importa librerie, setta semi | ambiente pronto & riproducibile |
-| Dati | Pulisce e normalizza | tensori `(N, 180, 37)` coerenti |
-| Loader | Crea batch seed-ati | input affidabili all’allenamento |
-| Config | Parametri di default | alterna esperimenti velocemente |
-| Loss | Class weights / Focal | bilanciamento classi rare |
-| Modello | GRU/LSTM/RNN | cervello personalizzabile |
-| Trainer | Warmup, EMA, scheduler | training stabile e tracciato |
-| Experiments | Run multipli, CV, sweep | esplorazione automatica |
-| Summary | Tabella, grafici, submission | risultati pronti per report |
+## Mini-tabella riassuntiva
+| Sezione | Cosa eseguo | Output principale | Cosa imparare |
+| --- | --- | --- | --- |
+| Preprocessing | Celle iniziali | Dati normalizzati `(N, 180, 37)` | Dati pronti per tutti i modelli |
+| RNN | `EXPERIMENT_CONFIGS` con RNN | Righe RNN in `summary_table` + grafici | Baseline semplice |
+| GRU | `EXPERIMENT_CONFIGS` con GRU | GRU top performer, grafici e confusion matrix | Modello migliore + spunti F1 |
+| LSTM | `EXPERIMENT_CONFIGS` con LSTM | Confronto con GRU/RNN | Valutare se vale la pena tenerle |
+| Report finale | `summary_table`, `best_run`, submission | F1, grafici, CSV | Riassunto da portare nel report |
+| TensorBoard | `%tensorboard --logdir...` | Loss/F1 per run, matrici, F1 classi | Diagnostica completa |
 
-Ora sai perché ogni blocco è lì e perché conviene eseguirlo in ordine. Buon viaggio con i pirati del dolore! 🏴‍☠️🥇
+---
+
+## Nota
+- Se non ti interessa un gruppo (es. RNN), commenta la riga in `EXPERIMENT_CONFIGS` e rilancia.
+- Per riprodurre il flusso “lab”: lancia i blocchi in quest’ordine, guardando i grafici dopo ogni gruppo (RNN → GRU → LSTM) così capisci subito come cambia il comportamento.
+- Quando trovi la configurazione finale, puoi fare cross-validation dedicata (`run_cross_validation`) o auto (`ENABLE_AUTO_CV=True`).
+
+Così il notebook segue lo stesso percorso del laboratorio: prima pulisci i dati, poi confronti RNN, GRU, LSTM con grafici e confusion matrix, e alla fine apri TensorBoard per vedere tutto insieme. 🚀
